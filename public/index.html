@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Kim Repostladı? - Multiplayer TikTok & Instagram Oyunu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+
+  <!-- Floating Glow FX -->
+  <div class="ambient-glow cyan"></div>
+  <div class="ambient-glow magenta"></div>
+
+  <!-- Main Container -->
+  <div id="app" class="app-container">
+
+    <!-- ==================== SCREEN 1: HOME ==================== -->
+    <section id="screen-home" class="screen active">
+      <div class="home-hero">
+        <div class="logo-badge">
+          <span class="icon-tt">🎵</span>
+          <span class="badge-text">MULTIPLAYER REPOST OYUNU</span>
+          <span class="icon-ig">📸</span>
+        </div>
+        <h1 class="glitch-title" data-text="KİM REPOSTLADI?">KİM REPOSTLADI?</h1>
+        <p class="subtitle">Arkadaşlarının TikTok ve Instagram repost zevkini ne kadar iyi tanıyorsun?</p>
+      </div>
+
+      <!-- Player Profile Setup Card -->
+      <div class="glass-card profile-card">
+        <h3>Oyuncu Profilini Seç</h3>
+        <div class="avatar-selection-wrapper">
+          <img id="my-avatar-preview" class="avatar-preview" src="https://api.dicebear.com/7.x/bottts/svg?seed=ProGamer" alt="Profil">
+          <div class="avatar-controls">
+            <button type="button" id="btn-random-avatar" class="btn-subtle">🎲 Yeni Avatar</button>
+          </div>
+        </div>
+        <div class="input-group">
+          <label for="player-name-input">Adın / Takma Adın</label>
+          <input type="text" id="player-name-input" placeholder="Örn: Berkcan" maxlength="16" autocomplete="off">
+        </div>
+      </div>
+
+      <!-- Action Tabs: Host / Join -->
+      <div class="tab-box glass-card">
+        <div class="tab-nav">
+          <button type="button" class="tab-btn active" data-tab="tab-create">Yeni Oda Kur</button>
+          <button type="button" class="tab-btn" data-tab="tab-join">Odaya Katıl</button>
+        </div>
+
+        <div id="tab-create" class="tab-content active">
+          <p class="tab-desc">Kendi odanı oluştur, arkadaşlarını Wi-Fi veya link ile davet et, şüphelileri ekle!</p>
+          <button type="button" id="btn-create-room" class="btn-gradient-primary btn-large">
+            <span>🔥 Oda Oluştur (Host)</span>
+          </button>
+        </div>
+
+        <div id="tab-join" class="tab-content">
+          <p class="tab-desc">Arkadaşının sana verdiği 4 haneli oda kodunu gir:</p>
+          <div class="input-group code-input-group">
+            <input type="text" id="join-code-input" placeholder="ABCD" maxlength="4" autocomplete="off">
+          </div>
+          <button type="button" id="btn-join-room" class="btn-gradient-secondary btn-large">
+            <span>🚀 Odaya Katıl</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== SCREEN 2: LOBBY ==================== -->
+    <section id="screen-lobby" class="screen">
+      <!-- Lobby Top Bar -->
+      <div class="lobby-header glass-card">
+        <div class="room-code-tag">
+          <span class="lbl">ODA KODU:</span>
+          <span id="lobby-room-code" class="code-val" title="Kopyalamak için tıkla">----</span>
+          <button type="button" id="btn-copy-code" class="btn-icon" title="Kodu Kopyala">📋</button>
+        </div>
+        <div class="header-actions">
+          <button type="button" id="btn-open-share-modal" class="btn-pill">
+            <span>📲 QR & Wi-Fi Link</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Connected Players List -->
+      <div class="glass-card section-card">
+        <div class="card-header-row">
+          <h3>🎮 Odadaki Oyuncular (<span id="player-count">0</span>)</h3>
+          <span class="status-indicator live">Canlı</span>
+        </div>
+        <div id="lobby-players-grid" class="players-avatar-grid">
+          <!-- Filled by app.js -->
+        </div>
+      </div>
+
+      <!-- Section 1: Arkadaş / Hesap Havuzu (Suspects) -->
+      <div class="glass-card section-card">
+        <div class="card-header-row">
+          <div>
+            <h3>👥 Arkadaş Havuzu (Şüpheliler)</h3>
+            <p class="card-subtext">Kimin repostlarını tahmin edeceksiniz? Arkadaşlarından en az 2 kişi ekle.</p>
+          </div>
+          <button type="button" id="btn-open-bookmarklet-modal" class="btn-subtle-glow">
+            <span>✨ Sihirli Toplayıcı</span>
+          </button>
+        </div>
+
+        <!-- TikTok Session Auth Banner (hidden because fixed sessionid is active) -->
+        <div id="tiktok-auth-banner" class="tiktok-auth-banner connected" style="display: none;">
+          <div class="auth-banner-content">
+            <div class="auth-banner-icon" id="auth-banner-icon">⚠️</div>
+            <div class="auth-banner-text">
+              <div class="auth-banner-title" id="auth-banner-title">TikTok "Repostlar" Sekmesi Korumalı</div>
+              <div class="auth-banner-desc" id="auth-banner-desc">TikTok misafirlere repostları gizler. Tek tıkla TikTok bağlayarak yazdığın tüm hesapların son 10 repostunu anında açabilirsin.</div>
+            </div>
+          </div>
+          <div class="auth-banner-actions">
+            <button type="button" id="btn-tiktok-login" class="btn-tiktok-connect">
+              <span id="btn-tiktok-login-text">🔑 TikTok Bağla (Repostları Aç)</span>
+            </button>
+            <button type="button" id="btn-toggle-manual-cookie" class="btn-cookie-subtle" title="sessionid yapıştır">
+              <span>📋 Cookie</span>
+            </button>
+          </div>
+          <!-- Manual cookie input box (hidden by default) -->
+          <div id="manual-cookie-box" class="manual-cookie-box" style="display: none; flex-direction: column; gap: 6px;">
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <input type="text" id="manual-cookie-input" placeholder="F12 -> Depolama (Storage) -> Çerezler -> 'sessionid' değerini yapıştır...">
+              <button type="button" id="btn-save-manual-cookie" class="btn-cookie-save">Kaydet</button>
+            </div>
+            <div style="font-size: 0.72rem; color: #94a3b8; line-height: 1.3;">
+              💡 <b>İpucu:</b> <code>document.cookie</code> komutu güvenlik gereği (HttpOnly) sessionid'yi gizler. Tarayıcınızda <b>F12 -> Depolama (Storage) -> Çerezler -> tiktok.com -> sessionid</b> satırının Değerini kopyalayın veya doğrudan <b>"🔑 TikTok Bağla"</b> butonunu kullanın.
+            </div>
+          </div>
+        </div>
+
+        <!-- Instagram Session Auth Banner -->
+        <div id="instagram-auth-banner" class="instagram-auth-banner disconnected" style="display: none;">
+          <div class="auth-banner-content">
+            <div class="auth-banner-icon" id="ig-auth-banner-icon">⚠️</div>
+            <div class="auth-banner-text">
+              <div class="auth-banner-title" id="ig-auth-banner-title">Instagram "Repostlar / Reels" Korumalı</div>
+              <div class="auth-banner-desc" id="ig-auth-banner-desc">Instagram giriş yapmayanlara Reels ve Repostları kısıtlar. Tek tıkla Instagram bağlayarak profillerin tüm videolarını açabilirsin.</div>
+            </div>
+          </div>
+          <div class="auth-banner-actions">
+            <button type="button" id="btn-instagram-login" class="btn-instagram-connect">
+              <span id="btn-instagram-login-text">🔑 Instagram Bağla</span>
+            </button>
+            <button type="button" id="btn-toggle-manual-ig-cookie" class="btn-cookie-subtle" title="sessionid yapıştır">
+              <span>📋 IG Cookie</span>
+            </button>
+          </div>
+          <!-- Manual cookie input box (hidden by default) -->
+          <div id="manual-ig-cookie-box" class="manual-cookie-box" style="display: none; flex-direction: column; gap: 6px;">
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <input type="text" id="manual-ig-cookie-input" placeholder="F12 -> Depolama (Storage) -> Çerezler -> instagram.com -> 'sessionid' değerini yapıştır...">
+              <button type="button" id="btn-save-manual-ig-cookie" class="btn-cookie-save ig-save-btn">Kaydet</button>
+            </div>
+            <div style="font-size: 0.72rem; color: #94a3b8; line-height: 1.3;">
+              💡 <b>İpucu:</b> <code>document.cookie</code> güvenlik gereği (HttpOnly) sessionid'yi gizler. Tarayıcınızda <b>F12 -> Depolama (Storage) -> Çerezler -> https://www.instagram.com -> sessionid</b> satırının Değerini kopyalayıp yapıştırın veya <b>"🔑 Instagram Bağla"</b> butonuna basın.
+            </div>
+          </div>
+        </div>
+
+        <!-- Add Suspect Form -->
+        <div class="add-suspect-form">
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;">
+            <div class="platform-toggle" style="margin-bottom: 0;">
+              <button type="button" class="plat-btn active" data-platform="tiktok">🎵 TikTok</button>
+              <button type="button" class="plat-btn" data-platform="instagram">📸 Instagram</button>
+              <button type="button" class="plat-btn" data-platform="both">🔥 Karma (TT + IG)</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.06); padding: 6px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12);">
+              <label for="repost-count-select" style="font-size: 0.8rem; color: #cbd5e1; white-space: nowrap;">🎲 Kişi Başı Repost:</label>
+              <select id="repost-count-select" style="background: #141824; color: #00f2fe; border: 1px solid rgba(0,242,254,0.35); border-radius: 6px; padding: 4px 8px; font-weight: 700; font-size: 0.85rem; cursor: pointer;">
+                <option value="3">3 Rastgele</option>
+                <option value="5">5 Rastgele</option>
+                <option value="8">8 Rastgele</option>
+                <option value="10" selected>10 Rastgele</option>
+                <option value="15">15 Rastgele</option>
+                <option value="20">20 Rastgele</option>
+              </select>
+            </div>
+          </div>
+          <div class="input-with-button" style="flex-wrap: wrap;">
+            <input type="text" id="suspect-username-input" placeholder="@kullanici_adi veya profil linki" autocomplete="off" style="flex: 1; min-width: 180px;">
+            <input type="text" id="suspect-ig-username-input" placeholder="📸 Instagram @kullanici (boşsa aynı)" autocomplete="off" style="display: none; flex: 1; min-width: 180px;">
+            <button type="button" id="btn-fetch-suspect" class="btn-gradient-primary">
+              <span id="fetch-btn-label">➕ Hesabı Ekle</span>
+            </button>
+          </div>
+          <div id="fetch-feedback" class="feedback-msg"></div>
+        </div>
+
+        <!-- Optional Self-Claim Helper Tip -->
+        <div class="lobby-self-claim-tip">
+          💡 <b>İsteğe Bağlı:</b> Eklenen hesaplardan sana ait olanın altındaki <b>"🙋‍♂️ Bu Benim"</b> butonuna basarsan, oyunda senin repostların çıktığında cevap veremezsin!
+        </div>
+
+        <!-- Suspects Grid -->
+        <div id="suspects-list-grid" class="suspects-grid">
+          <div class="empty-state">Henüz şüpheli arkadaş eklenmedi. Yukarıdan ekleyebilir veya Örnek Paket'i yükleyebilirsiniz.</div>
+        </div>
+      </div>
+
+      <!-- Section 2: Gizli Repost Kutusu (Videos Pool) -->
+      <div class="glass-card section-card">
+        <div class="card-header-row">
+          <div>
+            <h3>📦 Gizli Repost Kutusu</h3>
+            <p class="card-subtext">Arkadaşlarının repostladığı video linklerini buraya at. Kimse görmez!</p>
+          </div>
+          <div class="badge-pool-count">
+            <span id="total-pool-count">0</span> Video Hazır
+          </div>
+        </div>
+
+        <div class="add-repost-form">
+          <div class="input-group">
+            <label for="select-suspect-for-video">Bu video kime ait?</label>
+            <select id="select-suspect-for-video" class="custom-select">
+              <option value="">Önce bir arkadaş seçin...</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="repost-urls-textarea">TikTok veya Instagram Reel Linkleri (her satıra bir link):</label>
+            <textarea id="repost-urls-textarea" rows="2" placeholder="https://www.tiktok.com/@creator/video/...&#10;https://www.instagram.com/reel/..."></textarea>
+          </div>
+          <div class="repost-actions-row">
+            <button type="button" id="btn-resolve-and-add" class="btn-gradient-secondary">
+              <span id="resolve-btn-label">📥 Çözümle & Gizli Kutuya At</span>
+            </button>
+            <button type="button" id="btn-load-demo-pack" class="btn-outline-glow">
+              <span>⚡ Örnek Repost Paketi Yükle</span>
+            </button>
+          </div>
+          <div id="repost-feedback" class="feedback-msg"></div>
+        </div>
+      </div>
+
+      <!-- Host Game Settings & Start Control -->
+      <div id="host-controls-card" class="glass-card host-control-card">
+        <div class="settings-row">
+          <div class="setting-item">
+            <label>Tur Süresi:</label>
+            <select id="setting-round-time" class="custom-select">
+              <option value="15">15 Saniye (Çılgın)</option>
+              <option value="25" selected>25 Saniye (Dengeli)</option>
+              <option value="35">35 Saniye (Sakin)</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label>Tur Sayısı:</label>
+            <select id="setting-max-rounds" class="custom-select">
+              <option value="5">5 Tur</option>
+              <option value="10" selected>10 Tur</option>
+              <option value="15">15 Tur</option>
+            </select>
+          </div>
+        </div>
+        <button type="button" id="btn-start-game" class="btn-gradient-primary btn-large full-width">
+          <span>🔥 OYUNU BAŞLAT</span>
+        </button>
+        <p id="host-notice" class="host-notice">Oyunu başlatmak için en az 2 arkadaş ve 2 video gereklidir.</p>
+      </div>
+
+      <div id="guest-waiting-card" class="glass-card guest-waiting-card" style="display:none;">
+        <div class="spinner-pulse"></div>
+        <p>Oda kurucusunun oyunu başlatması bekleniyor...</p>
+      </div>
+    </section>
+
+    <!-- ==================== SCREEN 3: GAMEPLAY (WATCH & VOTE) ==================== -->
+    <section id="screen-gameplay" class="screen">
+      <!-- Gameplay Top HUD -->
+      <div class="game-hud glass-card">
+        <div class="hud-item round-badge">
+          <span class="hud-label">TUR</span>
+          <span id="hud-round-number" class="hud-val">1/10</span>
+        </div>
+        <div class="hud-timer-container">
+          <div class="timer-bar-bg">
+            <div id="hud-timer-bar" class="timer-bar-fill"></div>
+          </div>
+          <div id="hud-timer-seconds" class="timer-seconds-text">25s</div>
+        </div>
+        <div class="hud-item score-badge">
+          <span class="hud-label">PUAN</span>
+          <span id="hud-my-score" class="hud-val">0</span>
+          <span id="hud-my-streak" class="streak-badge" style="display:none;">🔥 2x</span>
+        </div>
+      </div>
+
+      <!-- Video Stage -->
+      <div class="video-stage">
+        <!-- Direct MP4 Player -->
+        <div class="video-container" id="video-wrapper">
+          <video id="game-video-player" playsinline preload="auto" loop muted></video>
+          
+          <!-- Iframe Fallback for Embeds -->
+          <iframe id="game-embed-iframe" src="" frameborder="0" allowfullscreen allow="autoplay" style="display:none;"></iframe>
+
+          <!-- Unmute & Audio Overlay Button -->
+          <button type="button" id="btn-toggle-sound" class="btn-sound-overlay">
+            <span id="sound-icon">🔇</span>
+            <span id="sound-text">Sesi Aç</span>
+          </button>
+
+          <!-- Original Creator Metadata Overlay (TikTok Style) -->
+          <div class="video-author-overlay">
+            <div class="author-row">
+              <img id="overlay-author-avatar" src="" alt="avatar" class="author-avatar-img">
+              <span id="overlay-author-handle" class="author-handle">@creator</span>
+            </div>
+            <p id="overlay-video-caption" class="video-caption">Video açıklaması burada yer alacak...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Voting Section -->
+      <div class="voting-panel glass-card">
+        <div class="voting-header">
+          <h2>🤔 BUNU KİM REPOSTLADI?</h2>
+          <div id="voting-status-indicator" class="voting-status-text">Arkadaşını seç ve oyunu kilitle!</div>
+        </div>
+
+        <!-- Own Repost Banner (Shown when current round video belongs to this player) -->
+        <div id="own-repost-banner" class="own-repost-banner" style="display: none;">
+          <div class="own-repost-icon">🤫</div>
+          <div class="own-repost-title">Bu Senin Kendi Repostun!</div>
+          <p class="own-repost-desc">Kendi repostunu bildiğin için bu turda oy kullanamazsın. Bakalım arkadaşların senin olduğunu bulabilecek mi? 👀</p>
+          <button type="button" id="btn-skip-own-round" class="btn-skip-own" style="display: none;">⏭️ Tek Kişilik Test: Turu Geç</button>
+        </div>
+
+        <div id="suspects-voting-grid" class="suspects-vote-grid">
+          <!-- Filled dynamically with candidate friend buttons -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== SCREEN 4: REVEAL (İFŞA ANI!) ==================== -->
+    <section id="screen-reveal" class="screen">
+      <div class="reveal-container">
+        <div class="reveal-header">
+          <div class="reveal-pill">💥 İFŞA ANI!</div>
+          <h1 class="reveal-title">BU REPOST KİME AİTTİ?</h1>
+        </div>
+
+        <!-- Spotlight Card for Correct Suspect -->
+        <div class="spotlight-card glass-card">
+          <div class="spotlight-avatar-wrap">
+            <img id="reveal-correct-avatar" src="" alt="Doğru Şüpheli" class="spotlight-avatar">
+            <div class="spotlight-platform-badge" id="reveal-platform-badge">🎵</div>
+          </div>
+          <div class="spotlight-info">
+            <span class="spotlight-sub">DOĞRU CEVAP</span>
+            <h2 id="reveal-correct-username">@username</h2>
+            <p id="reveal-correct-name">Görünen Ad</p>
+          </div>
+        </div>
+
+        <!-- Round Votes Breakdown (Who got it right / wrong) -->
+        <div class="votes-breakdown glass-card">
+          <h3>👥 Oyuncuların Tahminleri</h3>
+          <div id="reveal-votes-list" class="votes-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Mini Leaderboard -->
+        <div class="mini-leaderboard glass-card">
+          <h3>🏆 Güncel Sıralama</h3>
+          <div id="reveal-mini-leaderboard" class="mini-lb-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Host Next Round Button -->
+        <div id="reveal-host-actions" class="reveal-actions">
+          <button type="button" id="btn-next-round" class="btn-gradient-primary btn-large">
+            <span id="btn-next-round-label">Sıradaki Video ➡️</span>
+          </button>
+        </div>
+        <div id="reveal-guest-notice" class="guest-notice" style="display:none;">
+          <span>Host'un sonraki tura geçmesi bekleniyor...</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== SCREEN 5: PODIUM / GAME OVER ==================== -->
+    <section id="screen-podium" class="screen">
+      <div class="podium-container">
+        <div class="podium-header">
+          <div class="crown-icon">👑</div>
+          <h1 class="glitch-title">OYUN BİTTİ!</h1>
+          <p class="subtitle">Arkadaşlarının zevkini en iyi kim biliyor?</p>
+        </div>
+
+        <!-- Top 3 Podium Visual -->
+        <div class="podium-stage">
+          <!-- 2nd Place -->
+          <div class="podium-step step-2" id="podium-second-wrap">
+            <div class="podium-medal">🥈</div>
+            <img id="podium-second-avatar" class="podium-avatar" src="" alt="2.">
+            <div class="podium-name" id="podium-second-name">-</div>
+            <div class="podium-score" id="podium-second-score">0p</div>
+            <div class="podium-pillar pillar-2">2</div>
+          </div>
+
+          <!-- 1st Place -->
+          <div class="podium-step step-1" id="podium-first-wrap">
+            <div class="podium-crown">👑</div>
+            <div class="podium-medal">🥇</div>
+            <img id="podium-first-avatar" class="podium-avatar first-avatar" src="" alt="1.">
+            <div class="podium-name" id="podium-first-name">-</div>
+            <div class="podium-score" id="podium-first-score">0p</div>
+            <div class="podium-pillar pillar-1">1</div>
+          </div>
+
+          <!-- 3rd Place -->
+          <div class="podium-step step-3" id="podium-third-wrap">
+            <div class="podium-medal">🥉</div>
+            <img id="podium-third-avatar" class="podium-avatar" src="" alt="3.">
+            <div class="podium-name" id="podium-third-name">-</div>
+            <div class="podium-score" id="podium-third-score">0p</div>
+            <div class="podium-pillar pillar-3">3</div>
+          </div>
+        </div>
+
+        <!-- Fun Awards Cards -->
+        <div class="awards-grid" id="awards-grid">
+          <!-- Stalker, Open Book, Secret Agent awards -->
+        </div>
+
+        <!-- Full Results Table -->
+        <div class="glass-card full-results-card">
+          <h3>📊 Tüm Puan Durumu</h3>
+          <div id="full-leaderboard-list" class="full-lb-list">
+            <!-- Filled dynamically -->
+          </div>
+        </div>
+
+        <!-- Play Again Action -->
+        <div class="podium-actions">
+          <button type="button" id="btn-play-again" class="btn-gradient-primary btn-large">
+            <span>🔄 Tekrar Oyna (Lobiye Dön)</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ==================== MODAL: QR & WI-FI SHARE ==================== -->
+  <div id="modal-share" class="modal-overlay">
+    <div class="modal-box glass-card">
+      <div class="modal-header">
+        <h3>📲 Arkadaşlarını Davet Et</h3>
+        <button type="button" class="btn-close-modal" id="btn-close-share-modal">✕</button>
+      </div>
+      <div class="modal-body share-modal-body">
+        <p>Aynı Wi-Fi ağındaki arkadaşların bu QR kodu okutarak veya aşağıdaki bağlantıyla hemen katılabilir:</p>
+        
+        <div class="qr-code-wrapper">
+          <img id="share-qr-image" src="" alt="QR Kod">
+        </div>
+
+        <div class="link-copy-box">
+          <input type="text" id="share-url-input" readonly>
+          <button type="button" id="btn-copy-share-url" class="btn-gradient-secondary">Kopyala</button>
+        </div>
+
+        <div class="wifi-tip">
+          💡 <b>İpucu:</b> Arkadaşlarınla aynı Wi-Fi (LAN) ağına bağlı olduğundan emin ol.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: BOOKMARKLET (SİHİRLİ TOPLAYICI) ==================== -->
+  <div id="modal-bookmarklet" class="modal-overlay">
+    <div class="modal-box glass-card">
+      <div class="modal-header">
+        <h3>✨ Sihirli Tarayıcı Toplayıcı</h3>
+        <button type="button" class="btn-close-modal" id="btn-close-bm-modal">✕</button>
+      </div>
+      <div class="modal-body bm-modal-body">
+        <p>Arkadaşının TikTok "Repostlar" sekmesindeki tüm videoları <b>tek tıkla</b> odana aktar!</p>
+
+        <div class="steps-list">
+          <div class="step-item">
+            <span class="step-num">1</span>
+            <p>Aşağıdaki kodu kopyala veya yer işaretlerine sürükle:</p>
+          </div>
+          <div class="code-copy-container">
+            <textarea id="bookmarklet-code-area" readonly></textarea>
+            <button type="button" id="btn-copy-bm-code" class="btn-gradient-primary">Kodu Kopyala</button>
+          </div>
+          <div class="step-item">
+            <span class="step-num">2</span>
+            <p>Bilgisayarında veya telefonunda arkadaşının TikTok profiline git ve <b>"Repostlar"</b> sekmesini aç.</p>
+          </div>
+          <div class="step-item">
+            <span class="step-num">3</span>
+            <p>Tarayıcı adres çubuğuna kodu yapıştır ya da konsolda çalıştır (F12 > Console). Gelen pencereye Oda Kodunu gir, tüm videolar otomatik dolsun!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: kim-repostladi
+    env: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/chromium

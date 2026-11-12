@@ -1,0 +1,17 @@
+{
+  "name": "guess-the-repost",
+  "version": "1.0.0",
+  "description": "Kim Repostladı? - Multiplayer TikTok & Instagram Repost Guessing Game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "puppeteer-core": "^25.17.0",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.8.4"
+  }
+}
