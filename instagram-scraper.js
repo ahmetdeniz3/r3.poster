@@ -352,6 +352,9 @@ async function scrapeInstagramAccount(username, desiredCount = 10) {
         '--no-zygote',
         '--disable-extensions',
         '--mute-audio',
+        '--renderer-process-limit=1',
+        '--disable-background-networking',
+        '--no-first-run',
         '--disable-blink-features=AutomationControlled',
         '--window-size=1280,850',
         '--lang=tr-TR,tr,en-US,en'

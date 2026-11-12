@@ -647,168 +647,107 @@ app.get('/api/proxy-media', async (req, res) => {
   }
 });
 
-// 3. Fetch User Profile & Automatically Resolve Reposts/Videos
-app.post('/api/fetch-user', async (req, res) => {
-  try {
-    const { platform = 'tiktok', username: rawUsername, rapidApiKey, count = 10 } = req.body;
-    const targetCount = Math.max(1, Math.min(30, parseInt(count, 10) || 10));
-    const username = cleanUsername(rawUsername, platform);
+// 3. Core Fetch User Profile & Reposts helper (used by both HTTP & Socket.IO)
+async function performFetchUser(body) {
+  const { platform = 'tiktok', username: rawUsername, rapidApiKey, count = 10, instagramUsername } = body || {};
+  const targetCount = Math.max(1, Math.min(30, parseInt(count, 10) || 10));
+  const username = cleanUsername(rawUsername, platform);
 
-    if (!username) {
-      return res.status(400).json({ success: false, error: 'Geçersiz kullanıcı adı.' });
-    }
+  if (!username) {
+    return { statusCode: 400, success: false, error: 'Geçersiz kullanıcı adı.' };
+  }
 
-    // Check in-memory browser cache first
-    const cleanUserKey = username.toLowerCase();
-    if (cachedBrowserReposts.has(cleanUserKey)) {
-      const cached = cachedBrowserReposts.get(cleanUserKey);
-      console.log(`[Fetch-User] Serving ${cached.items.length} reposts from memory cache for @${username}`);
-      return res.json({
-        success: true,
-        user: cached.user,
-        items: cached.items,
-        isReposts: true,
-        note: `🎉 @${username} hesabının GERÇEK REPOSTLARINDAN ${cached.items.length} adet video içe aktarıldı!`
-      });
-    }
-
-    let user = {
-      id: uid('susp'),
-      username,
-      displayName: username,
-      avatar: '',
-      platform,
-      secUid: ''
+  // Check in-memory browser cache first
+  const cleanUserKey = username.toLowerCase();
+  if (cachedBrowserReposts.has(cleanUserKey)) {
+    const cached = cachedBrowserReposts.get(cleanUserKey);
+    console.log(`[Fetch-User] Serving ${cached.items.length} reposts from memory cache for @${username}`);
+    return {
+      statusCode: 200,
+      success: true,
+      user: cached.user,
+      items: cached.items,
+      isReposts: true,
+      note: `🎉 @${username} hesabının GERÇEK REPOSTLARINDAN ${cached.items.length} adet video içe aktarıldı!`
     };
-    let items = [];
-    let note = '';
+  }
 
-    if (platform === 'tiktok') {
-      // Step A: RapidAPI if key provided
-      if (rapidApiKey) {
-        try {
-          const rapidRes = await fetch(`https://tiktok-scraper7.p.rapidapi.com/user/repost?unique_id=${encodeURIComponent(username)}&count=20`, {
-            headers: {
-              'x-rapidapi-key': rapidApiKey,
-              'x-rapidapi-host': 'tiktok-scraper7.p.rapidapi.com'
-            }
-          });
-          if (rapidRes.ok) {
-            const rJson = await rapidRes.json();
-            if (rJson.data && Array.isArray(rJson.data.videos)) {
-              items = rJson.data.videos.map(v => ({
-                id: uid('vid'),
-                platform: 'tiktok',
-                url: v.play || v.wmplay || `https://www.tiktok.com/@${v.author?.unique_id}/video/${v.id}`,
-                videoUrl: wrapProxyUrl(v.play || v.wmplay),
-                coverUrl: wrapProxyUrl(v.cover || v.origin_cover || ''),
-                caption: v.title || '',
-                duration: v.duration || 15,
-                originalAuthor: {
-                  username: v.author?.unique_id || 'creator',
-                  displayName: v.author?.nickname || 'Creator',
-                  avatar: v.author?.avatar ? wrapProxyUrl(v.author.avatar) : ''
-                },
-                embedUrl: v.id ? `https://www.tiktok.com/embed/v2/${v.id}` : ''
-              }));
-            }
+  let user = {
+    id: uid('susp'),
+    username,
+    displayName: username,
+    avatar: '',
+    platform,
+    secUid: ''
+  };
+  let items = [];
+  let note = '';
+
+  if (platform === 'tiktok') {
+    if (rapidApiKey) {
+      try {
+        const rapidRes = await fetch(`https://tiktok-scraper7.p.rapidapi.com/user/repost?unique_id=${encodeURIComponent(username)}&count=20`, {
+          headers: {
+            'x-rapidapi-key': rapidApiKey,
+            'x-rapidapi-host': 'tiktok-scraper7.p.rapidapi.com'
           }
-        } catch (e) {
-          console.error('RapidAPI error:', e.message);
+        });
+        if (rapidRes.ok) {
+          const rJson = await rapidRes.json();
+          if (rJson.data && Array.isArray(rJson.data.videos)) {
+            items = rJson.data.videos.map(v => ({
+              id: uid('vid'),
+              platform: 'tiktok',
+              url: v.play || v.wmplay || `https://www.tiktok.com/@${v.author?.unique_id}/video/${v.id}`,
+              videoUrl: wrapProxyUrl(v.play || v.wmplay),
+              coverUrl: wrapProxyUrl(v.cover || v.origin_cover || ''),
+              caption: v.title || '',
+              duration: v.duration || 15,
+              originalAuthor: {
+                username: v.author?.unique_id || 'creator',
+                displayName: v.author?.nickname || 'Creator',
+                avatar: v.author?.avatar ? wrapProxyUrl(v.author.avatar) : ''
+              },
+              embedUrl: v.id ? `https://www.tiktok.com/embed/v2/${v.id}` : ''
+            }));
+          }
         }
+      } catch (e) {
+        console.error('RapidAPI error:', e.message);
       }
+    }
 
-      // Step B: Scrape REAL profile, REAL reposts & REAL videos using headless Edge
-      if (items.length === 0) {
-        const scrapeRes = await scrapeTikTokAccount(username, targetCount);
-        if (scrapeRes.cookieHeader) {
-          saveTikTokCookies(scrapeRes.cookieHeader);
-        }
-        if (scrapeRes.success) {
-          user.displayName = scrapeRes.user.displayName || username;
-          user.avatar = scrapeRes.user.avatar || '';
-          user.secUid = scrapeRes.user.secUid || '';
+    if (items.length === 0) {
+      const scrapeRes = await scrapeTikTokAccount(username, targetCount);
+      if (scrapeRes.cookieHeader) {
+        saveTikTokCookies(scrapeRes.cookieHeader);
+      }
+      if (scrapeRes.success) {
+        user.displayName = scrapeRes.user.displayName || username;
+        user.avatar = scrapeRes.user.avatar || '';
+        user.secUid = scrapeRes.user.secUid || '';
 
-          if (scrapeRes.items && scrapeRes.items.length > 0) {
-            const targetItems = scrapeRes.items.slice(0, targetCount);
-            const resolvedList = [];
+        if (scrapeRes.items && scrapeRes.items.length > 0) {
+          const targetItems = scrapeRes.items.slice(0, targetCount);
+          const resolvedList = [];
 
-            for (const it of targetItems) {
-              let directPlay = it.playAddr || '';
-              let coverImg = it.cover;
+          for (const it of targetItems) {
+            let directPlay = it.playAddr || '';
+            let coverImg = it.cover;
 
-              // Only call TikWM if direct playAddr is missing
-              if (!directPlay) {
-                const resolvedMedia = await fetchTikwmVideo(it.url);
-                if (resolvedMedia && (resolvedMedia.play || resolvedMedia.wmplay)) {
-                  directPlay = resolvedMedia.play || resolvedMedia.wmplay;
-                  coverImg = resolvedMedia.cover || resolvedMedia.origin_cover || it.cover;
-                }
+            if (!directPlay) {
+              const resolvedMedia = await fetchTikwmVideo(it.url);
+              if (resolvedMedia && (resolvedMedia.play || resolvedMedia.wmplay)) {
+                directPlay = resolvedMedia.play || resolvedMedia.wmplay;
+                coverImg = resolvedMedia.cover || resolvedMedia.origin_cover || it.cover;
               }
-
-              resolvedList.push({
-                id: uid('vid'),
-                platform: 'tiktok',
-                url: it.url,
-                videoUrl: directPlay ? wrapProxyUrl(directPlay) : '',
-                coverUrl: coverImg ? wrapProxyUrl(coverImg) : '',
-                caption: it.desc || '',
-                duration: it.duration || 15,
-                originalAuthor: {
-                  username: it.originalAuthor?.username || username,
-                  displayName: it.originalAuthor?.displayName || username,
-                  avatar: it.originalAuthor?.avatar ? wrapProxyUrl(it.originalAuthor.avatar) : ''
-                },
-                embedUrl: `https://www.tiktok.com/embed/v2/${it.id}`
-              });
             }
-            items = resolvedList;
-          }
-          note = scrapeRes.note;
-        }
-      }
 
-      // Fallback avatar if empty
-      if (!user.avatar) {
-        user.avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=fe2c55&color=fff&bold=true&size=200`;
-      }
-
-    } else if (platform === 'both') {
-      // Karma Mode: Fetch from BOTH TikTok and Instagram together
-      const igUsername = cleanUsername(req.body.instagramUsername || rawUsername, 'instagram') || username;
-      const ttShare = Math.ceil(targetCount / 2);
-      const igShare = Math.max(1, targetCount - ttShare);
-
-      const [ttRes, igRes] = await Promise.all([
-        scrapeTikTokAccount(username, targetCount).catch(() => ({ success: false, items: [] })),
-        scrapeInstagramAccount(igUsername, targetCount).catch(() => ({ success: false, items: [] }))
-      ]);
-
-      if (ttRes.cookieHeader) saveTikTokCookies(ttRes.cookieHeader);
-      if (igRes.cookieHeader) saveInstagramCookies(igRes.cookieHeader);
-
-      user.platform = 'both';
-      user.displayName = (ttRes.user && ttRes.user.displayName) || (igRes.user && igRes.user.displayName) || username;
-      user.avatar = (ttRes.user && ttRes.user.avatar) || (igRes.user && igRes.user.avatar ? wrapProxyUrl(igRes.user.avatar) : '') || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=fe2c55&color=fff&bold=true&size=200`;
-
-      const ttProcessed = [];
-      if (ttRes.success && Array.isArray(ttRes.items)) {
-        for (const it of ttRes.items) {
-          let directPlay = '';
-          let coverImg = it.cover;
-          const resolvedMedia = await fetchTikwmVideo(it.url);
-          if (resolvedMedia && (resolvedMedia.play || resolvedMedia.wmplay)) {
-            directPlay = resolvedMedia.play || resolvedMedia.wmplay;
-            coverImg = resolvedMedia.cover || resolvedMedia.origin_cover || it.cover;
-          } else if (it.playAddr) {
-            directPlay = it.playAddr;
-          }
-          if (directPlay) {
-            ttProcessed.push({
+            resolvedList.push({
               id: uid('vid'),
               platform: 'tiktok',
               url: it.url,
-              videoUrl: wrapProxyUrl(directPlay),
+              videoUrl: directPlay ? wrapProxyUrl(directPlay) : '',
               coverUrl: coverImg ? wrapProxyUrl(coverImg) : '',
               caption: it.desc || '',
               duration: it.duration || 15,
@@ -820,96 +759,155 @@ app.post('/api/fetch-user', async (req, res) => {
               embedUrl: `https://www.tiktok.com/embed/v2/${it.id}`
             });
           }
+          items = resolvedList;
         }
+        note = scrapeRes.note;
       }
+    }
 
-      const igProcessed = [];
-      if (igRes.success && Array.isArray(igRes.items)) {
-        for (const it of igRes.items) {
-          if (it.playAddr) {
-            igProcessed.push({
-              id: uid('vid'),
-              platform: 'instagram',
-              url: it.url,
-              videoUrl: wrapProxyUrl(it.playAddr),
-              coverUrl: it.cover ? wrapProxyUrl(it.cover) : '',
-              caption: it.desc || '',
-              duration: it.duration || 15,
-              originalAuthor: {
-                username: it.originalAuthor?.username || igUsername,
-                displayName: it.originalAuthor?.displayName || `@${igUsername}`,
-                avatar: it.originalAuthor?.avatar ? wrapProxyUrl(it.originalAuthor.avatar) : ''
-              },
-              embedUrl: ''
-            });
+    if (!user.avatar) {
+      user.avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=fe2c55&color=fff&bold=true&size=200`;
+    }
+  } else if (platform === 'both') {
+    const igUsername = cleanUsername(instagramUsername || rawUsername, 'instagram') || username;
+    const ttShare = Math.ceil(targetCount / 2);
+    const igShare = Math.max(1, targetCount - ttShare);
+
+    const [ttRes, igRes] = await Promise.all([
+      scrapeTikTokAccount(username, targetCount).catch(() => ({ success: false, items: [] })),
+      scrapeInstagramAccount(igUsername, targetCount).catch(() => ({ success: false, items: [] }))
+    ]);
+
+    if (ttRes.cookieHeader) saveTikTokCookies(ttRes.cookieHeader);
+    if (igRes.cookieHeader) saveInstagramCookies(igRes.cookieHeader);
+
+    user.platform = 'both';
+    user.displayName = (ttRes.user && ttRes.user.displayName) || (igRes.user && igRes.user.displayName) || username;
+    user.avatar = (ttRes.user && ttRes.user.avatar) || (igRes.user && igRes.user.avatar ? wrapProxyUrl(igRes.user.avatar) : '') || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=fe2c55&color=fff&bold=true&size=200`;
+
+    const ttProcessed = [];
+    if (ttRes.success && Array.isArray(ttRes.items)) {
+      for (const it of ttRes.items) {
+        let directPlay = it.playAddr || '';
+        let coverImg = it.cover;
+        if (!directPlay) {
+          const resolvedMedia = await fetchTikwmVideo(it.url);
+          if (resolvedMedia && (resolvedMedia.play || resolvedMedia.wmplay)) {
+            directPlay = resolvedMedia.play || resolvedMedia.wmplay;
+            coverImg = resolvedMedia.cover || resolvedMedia.origin_cover || it.cover;
           }
         }
-      }
-
-      // Balance TT & IG up to targetCount, filling shortfall from the other if needed
-      let pickedTT = ttProcessed.slice(0, ttShare);
-      let pickedIG = igProcessed.slice(0, igShare);
-      if (pickedTT.length < ttShare && igProcessed.length > pickedIG.length) {
-        pickedIG = igProcessed.slice(0, targetCount - pickedTT.length);
-      } else if (pickedIG.length < igShare && ttProcessed.length > pickedTT.length) {
-        pickedTT = ttProcessed.slice(0, targetCount - pickedIG.length);
-      }
-
-      items = [...pickedTT, ...pickedIG].sort(() => Math.random() - 0.5).slice(0, targetCount);
-      note = `🔥 Karma Mod (@${username} + @${igUsername}): ${pickedTT.length} TikTok + ${pickedIG.length} Instagram = Toplam ${items.length} rastgele repost eklendi!`;
-
-    } else {
-      // Instagram - Scrape REAL profile, REAL reposts & REAL reels using headless Edge
-      const igRes = await scrapeInstagramAccount(username, targetCount);
-      if (igRes.cookieHeader) {
-        saveInstagramCookies(igRes.cookieHeader);
-      }
-      if (igRes.success && igRes.user) {
-        user.displayName = igRes.user.displayName || `@${username}`;
-        user.avatar = igRes.user.avatar ? wrapProxyUrl(igRes.user.avatar) : `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=833ab4&color=fff&size=200`;
-
-        if (igRes.items && igRes.items.length > 0) {
-          const targetItems = igRes.items.slice(0, targetCount);
-          items = targetItems.map(it => {
-            let directPlay = it.playAddr || '';
-            let coverImg = it.cover || '';
-            return {
-              id: uid('vid'),
-              platform: 'instagram',
-              url: it.url,
-              videoUrl: directPlay ? wrapProxyUrl(directPlay) : '',
-              coverUrl: coverImg ? wrapProxyUrl(coverImg) : '',
-              caption: it.desc || '',
-              duration: it.duration || 15,
-              originalAuthor: {
-                username: it.originalAuthor?.username || username,
-                displayName: it.originalAuthor?.displayName || `@${username}`,
-                avatar: it.originalAuthor?.avatar ? wrapProxyUrl(it.originalAuthor.avatar) : ''
-              },
-              embedUrl: '' // Leave empty so player never falls back to broken Instagram iframe embed
-            };
+        if (directPlay) {
+          ttProcessed.push({
+            id: uid('vid'),
+            platform: 'tiktok',
+            url: it.url,
+            videoUrl: wrapProxyUrl(directPlay),
+            coverUrl: coverImg ? wrapProxyUrl(coverImg) : '',
+            caption: it.desc || '',
+            duration: it.duration || 15,
+            originalAuthor: {
+              username: it.originalAuthor?.username || username,
+              displayName: it.originalAuthor?.displayName || username,
+              avatar: it.originalAuthor?.avatar ? wrapProxyUrl(it.originalAuthor.avatar) : ''
+            },
+            embedUrl: `https://www.tiktok.com/embed/v2/${it.id}`
           });
         }
-        note = igRes.note;
-      } else {
-        user.avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=833ab4&color=fff&bold=true&size=200`;
-        user.displayName = `@${username}`;
       }
     }
 
-    if (!note) {
-      note = items.length > 0
-        ? `✅ @${user.username} eklendi ve ${items.length} adet repost videosu gizli havuza aktarıldı!`
-        : `ℹ️ @${user.username} profili eklendi. Arkadaşının video linklerini Gizli Kutu'ya yapıştırabilirsin.`;
+    const igProcessed = [];
+    if (igRes.success && Array.isArray(igRes.items)) {
+      for (const it of igRes.items) {
+        if (it.playAddr) {
+          igProcessed.push({
+            id: uid('vid'),
+            platform: 'instagram',
+            url: it.url,
+            videoUrl: wrapProxyUrl(it.playAddr),
+            coverUrl: it.cover ? wrapProxyUrl(it.cover) : '',
+            caption: it.desc || '',
+            duration: it.duration || 15,
+            originalAuthor: {
+              username: it.originalAuthor?.username || igUsername,
+              displayName: it.originalAuthor?.displayName || `@${igUsername}`,
+              avatar: it.originalAuthor?.avatar ? wrapProxyUrl(it.originalAuthor.avatar) : ''
+            },
+            embedUrl: ''
+          });
+        }
+      }
     }
 
-    return res.json({
-      success: true,
-      user,
-      items,
-      note,
-      autoFetchedCount: items.length
-    });
+    let pickedTT = ttProcessed.slice(0, ttShare);
+    let pickedIG = igProcessed.slice(0, igShare);
+    if (pickedTT.length < ttShare && igProcessed.length > pickedIG.length) {
+      pickedIG = igProcessed.slice(0, targetCount - pickedTT.length);
+    } else if (pickedIG.length < igShare && ttProcessed.length > pickedTT.length) {
+      pickedTT = ttProcessed.slice(0, targetCount - pickedIG.length);
+    }
+
+    items = [...pickedTT, ...pickedIG].sort(() => Math.random() - 0.5).slice(0, targetCount);
+    note = `🔥 Karma Mod (@${username} + @${igUsername}): ${pickedTT.length} TikTok + ${pickedIG.length} Instagram = Toplam ${items.length} rastgele repost eklendi!`;
+  } else {
+    const igRes = await scrapeInstagramAccount(username, targetCount);
+    if (igRes.cookieHeader) {
+      saveInstagramCookies(igRes.cookieHeader);
+    }
+    if (igRes.success && igRes.user) {
+      user.displayName = igRes.user.displayName || `@${username}`;
+      user.avatar = igRes.user.avatar ? wrapProxyUrl(igRes.user.avatar) : `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=833ab4&color=fff&size=200`;
+
+      if (igRes.items && igRes.items.length > 0) {
+        const targetItems = igRes.items.slice(0, targetCount);
+        items = targetItems.map(it => {
+          let directPlay = it.playAddr || '';
+          let coverImg = it.cover || '';
+          return {
+            id: uid('vid'),
+            platform: 'instagram',
+            url: it.url,
+            videoUrl: directPlay ? wrapProxyUrl(directPlay) : '',
+            coverUrl: coverImg ? wrapProxyUrl(coverImg) : '',
+            caption: it.desc || '',
+            duration: it.duration || 15,
+            originalAuthor: {
+              username: it.originalAuthor?.username || username,
+              displayName: it.originalAuthor?.displayName || `@${username}`,
+              avatar: it.originalAuthor?.avatar ? wrapProxyUrl(it.originalAuthor.avatar) : ''
+            },
+            embedUrl: ''
+          };
+        });
+      }
+      note = igRes.note;
+    } else {
+      user.avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=833ab4&color=fff&bold=true&size=200`;
+      user.displayName = `@${username}`;
+    }
+  }
+
+  if (!note) {
+    note = items.length > 0
+      ? `✅ @${user.username} eklendi ve ${items.length} adet repost videosu gizli havuza aktarıldı!`
+      : `ℹ️ @${user.username} profili eklendi. Arkadaşının video linklerini Gizli Kutu'ya yapıştırabilirsin.`;
+  }
+
+  return {
+    statusCode: 200,
+    success: true,
+    user,
+    items,
+    note,
+    autoFetchedCount: items.length
+  };
+}
+
+app.post('/api/fetch-user', async (req, res) => {
+  try {
+    const result = await performFetchUser(req.body);
+    return res.status(result.statusCode || 200).json(result);
   } catch (error) {
     console.error('fetch-user error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1566,6 +1564,53 @@ io.on('connection', (socket) => {
 
     broadcastRoomState(room);
     io.to(room.code).emit('notification', `@${suspectObj.username} şüpheli havuzuna eklendi (${suspectObj.repostCount} video)! 🎯`);
+  });
+
+  // 3b. Fetch & Add Suspect directly over WebSocket (bypasses Render 30s HTTP proxy timeout!)
+  socket.on('fetch_and_add_suspect', async ({ roomCode, platform, username, instagramUsername, count }) => {
+    try {
+      const room = rooms.get(roomCode ? roomCode.toUpperCase() : '');
+      if (!room) {
+        return socket.emit('fetch_user_result', { success: false, error: 'Oda bulunamadı.' });
+      }
+
+      const result = await performFetchUser({ platform, username, instagramUsername, count });
+      if (!result.success || !result.user) {
+        return socket.emit('fetch_user_result', { success: false, error: result.error || 'Profil çekilemedi.' });
+      }
+
+      const suspect = result.user;
+      const items = result.items || [];
+      const suspectId = suspect.id || uid('susp');
+      const existingIndex = room.suspects.findIndex(s => s.id === suspectId || s.username.toLowerCase() === suspect.username.toLowerCase());
+
+      const suspectObj = {
+        id: existingIndex >= 0 ? room.suspects[existingIndex].id : suspectId,
+        username: suspect.username,
+        displayName: suspect.displayName || suspect.username,
+        platform: existingIndex >= 0 && room.suspects[existingIndex].platform !== suspect.platform ? 'both' : (suspect.platform || 'tiktok'),
+        avatar: suspect.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(suspect.username)}&background=fe2c55&color=fff`,
+        repostCount: 0
+      };
+
+      if (existingIndex >= 0) {
+        room.suspects[existingIndex] = suspectObj;
+      } else {
+        room.suspects.push(suspectObj);
+      }
+
+      for (const it of items) {
+        addOrMergePoolItem(room, it, suspectObj.id, socket.data.playerId);
+      }
+
+      recalculateSuspectCounts(room);
+      broadcastRoomState(room);
+      io.to(room.code).emit('notification', `@${suspectObj.username} şüpheli havuzuna eklendi (${suspectObj.repostCount} video)! 🎯`);
+      socket.emit('fetch_user_result', { success: true, user: suspectObj, items, note: result.note });
+    } catch (err) {
+      console.error('fetch_and_add_suspect error:', err);
+      socket.emit('fetch_user_result', { success: false, error: err.message || 'Sunucu hatası.' });
+    }
   });
 
   // 4. Remove Suspect

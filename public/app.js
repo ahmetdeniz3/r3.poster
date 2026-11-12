@@ -475,63 +475,39 @@ async function handleAddSuspect() {
     feedback.className = 'feedback-msg info';
   }
 
-  try {
-    const res = await fetch('/api/fetch-user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        platform: currentSuspectPlatform,
-        username: rawUsername,
-        instagramUsername: rawIgUsername || rawUsername,
-        count: desiredCount
-      })
-    });
+  // Use WebSocket to bypass Render's 30s HTTP proxy timeout
+  socket.emit('fetch_and_add_suspect', {
+    roomCode: currentRoomCode,
+    platform: currentSuspectPlatform,
+    username: rawUsername,
+    instagramUsername: rawIgUsername || rawUsername,
+    count: desiredCount
+  });
+}
 
-    const rawText = await res.text();
-    let data = null;
-    try {
-      data = rawText ? JSON.parse(rawText) : null;
-    } catch (parseErr) {
-      data = null;
-    }
+// Listen for WebSocket fetch result
+socket.on('fetch_user_result', (data) => {
+  const input = document.getElementById('suspect-username-input');
+  const igInput = document.getElementById('suspect-ig-username-input');
+  const feedback = document.getElementById('fetch-feedback');
+  const btnLabel = document.getElementById('fetch-btn-label');
 
-    if (!data) {
-      if (feedback) {
-        feedback.textContent = '❌ Sunucu yanıt vermedi (zaman aşımı veya yoğunluk). Lütfen tekrar deneyin.';
-        feedback.className = 'feedback-msg error';
-      }
-      return;
-    }
+  if (btnLabel) btnLabel.textContent = '➕ Hesabı Ekle';
 
-    if (data.success && data.user) {
-      // Automatically send the returned items (which always contains real playable videos)
-      socket.emit('add_suspect', {
-        roomCode: currentRoomCode,
-        suspect: data.user,
-        items: data.items || []
-      });
-
-      input.value = '';
-      if (igInput) igInput.value = '';
-      if (feedback) {
-        feedback.textContent = data.note || `✅ @${data.user.username} eklendi!`;
-        feedback.className = 'feedback-msg success';
-      }
-    } else {
-      if (feedback) {
-        feedback.textContent = `❌ ${data.error || 'Profil eklenemedi.'}`;
-        feedback.className = 'feedback-msg error';
-      }
-    }
-  } catch (err) {
+  if (data && data.success && data.user) {
+    if (input) input.value = '';
+    if (igInput) igInput.value = '';
     if (feedback) {
-      feedback.textContent = `❌ Sunucu hatası: ${err.message}`;
+      feedback.textContent = data.note || `✅ @${data.user.username} eklendi!`;
+      feedback.className = 'feedback-msg success';
+    }
+  } else {
+    if (feedback) {
+      feedback.textContent = `❌ ${(data && data.error) || 'Profil eklenemedi.'}`;
       feedback.className = 'feedback-msg error';
     }
-  } finally {
-    if (btnLabel) btnLabel.textContent = '➕ Hesabı Ekle';
   }
-}
+});
 
 // Resolve and Add Repost URLs to Pool
 async function handleResolveReposts() {
