@@ -240,6 +240,11 @@ async function scrapeTikTokAccount(username, desiredCount = 10) {
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--disable-extensions',
+        '--mute-audio',
         '--disable-blink-features=AutomationControlled',
         '--window-size=1280,850',
         '--lang=en-US,en'
@@ -249,6 +254,7 @@ async function scrapeTikTokAccount(username, desiredCount = 10) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0');
     await page.setViewport({ width: 1280, height: 850 });
+    await page.setRequestInterception(true);
 
     // Inject saved TikTok session cookies if available
     const session = getTikTokSession();
@@ -278,6 +284,12 @@ async function scrapeTikTokAccount(username, desiredCount = 10) {
       const u = req.url();
       if (u.includes('/api/post/item_list')) {
         capturedPostUrl = u;
+      }
+      const rType = req.resourceType();
+      if (rType === 'image' || rType === 'media' || rType === 'font' || rType === 'stylesheet') {
+        req.abort().catch(() => {});
+      } else {
+        req.continue().catch(() => {});
       }
     });
 
@@ -370,14 +382,14 @@ async function scrapeTikTokAccount(username, desiredCount = 10) {
       }
 
       if (tabOpened) {
-        await new Promise(r => setTimeout(r, 2200));
-        // Scroll multiple times to load a broad pool of reposts (not just the first 10!)
+        await new Promise(r => setTimeout(r, 1800));
+        // Scroll up to 3 times to load a broad pool of reposts quickly
         let prevLen = repostItems.length;
         let staleScrolls = 0;
-        for (let s = 0; s < 6; s++) {
-          if (repostItems.length >= Math.max(40, targetCount * 3)) break;
-          await page.evaluate(() => window.scrollBy(0, 1400));
-          await new Promise(r => setTimeout(r, 1300));
+        for (let s = 0; s < 3; s++) {
+          if (repostItems.length >= Math.max(30, targetCount * 2)) break;
+          await page.evaluate(() => window.scrollBy(0, 1600));
+          await new Promise(r => setTimeout(r, 1100));
           if (repostItems.length === prevLen) {
             staleScrolls++;
             if (staleScrolls >= 2) break;

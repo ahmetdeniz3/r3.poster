@@ -734,16 +734,16 @@ app.post('/api/fetch-user', async (req, res) => {
             const resolvedList = [];
 
             for (const it of targetItems) {
-              let directPlay = '';
+              let directPlay = it.playAddr || '';
               let coverImg = it.cover;
 
-              // Resolve universal direct playable stream via TikWM
-              const resolvedMedia = await fetchTikwmVideo(it.url);
-              if (resolvedMedia && (resolvedMedia.play || resolvedMedia.wmplay)) {
-                directPlay = resolvedMedia.play || resolvedMedia.wmplay;
-                coverImg = resolvedMedia.cover || resolvedMedia.origin_cover || it.cover;
-              } else if (it.playAddr) {
-                directPlay = it.playAddr;
+              // Only call TikWM if direct playAddr is missing
+              if (!directPlay) {
+                const resolvedMedia = await fetchTikwmVideo(it.url);
+                if (resolvedMedia && (resolvedMedia.play || resolvedMedia.wmplay)) {
+                  directPlay = resolvedMedia.play || resolvedMedia.wmplay;
+                  coverImg = resolvedMedia.cover || resolvedMedia.origin_cover || it.cover;
+                }
               }
 
               resolvedList.push({

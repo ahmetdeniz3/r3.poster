@@ -487,7 +487,22 @@ async function handleAddSuspect() {
       })
     });
 
-    const data = await res.json();
+    const rawText = await res.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch (parseErr) {
+      data = null;
+    }
+
+    if (!data) {
+      if (feedback) {
+        feedback.textContent = '❌ Sunucu yanıt vermedi (zaman aşımı veya yoğunluk). Lütfen tekrar deneyin.';
+        feedback.className = 'feedback-msg error';
+      }
+      return;
+    }
+
     if (data.success && data.user) {
       // Automatically send the returned items (which always contains real playable videos)
       socket.emit('add_suspect', {
