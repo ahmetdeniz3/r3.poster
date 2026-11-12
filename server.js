@@ -546,7 +546,7 @@ app.post('/api/import-form', (req, res) => {
   <div class="box">
     <h2>🎉 Repostlar Başarıyla Aktarıldı!</h2>
     <p><strong>@${username}</strong> hesabının <strong>${processedItems.length}</strong> adet repostu hafızaya alındı.</p>
-    <div class="badge">Kim Repostladı? Hazır!</div>
+    <div class="badge">r3.poster Hazır!</div>
     <p style="color: #94a3b8; font-size: 0.85rem; margin-top: 15px;">Bu sekme otomatik olarak kapanıyor...</p>
   </div>
   <script>
@@ -1955,7 +1955,7 @@ io.on('connection', (socket) => {
 server.listen(PORT, '0.0.0.0', () => {
   const lanIp = getLanIp();
   console.log(`\n=================================================`);
-  console.log(`🔥 "Kim Repostladı?" Sunucusu Başlatıldı!`);
+  console.log(`🔥 "r3.poster" Sunucusu Başlatıldı!`);
   console.log(`📡 Yerel URL:      http://localhost:${PORT}`);
   console.log(`🌐 Wi-Fi / LAN URL: http://${lanIp}:${PORT}`);
   console.log(`=================================================\n`);

@@ -1,7 +1,7 @@
 {
-  "name": "guess-the-repost",
+  "name": "r3-poster",
   "version": "1.0.0",
-  "description": "Kim Repostladı? - Multiplayer TikTok & Instagram Repost Guessing Game",
+  "description": "r3.poster - Multiplayer TikTok & Instagram Repost Guessing Game",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
